@@ -3,109 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Streamer Control Panel</title>
+    <title>Streamer Control Panel (AUTO)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
 <div class="container">
     <div class="card">
         <div class="card-header">
             <span class="dot red"></span>
             <span class="dot yellow"></span>
             <span class="dot green"></span>
-            <span class="title-text">./stream_control.sh</span>
+            <span class="title-text">./start_autostream.sh</span>
         </div>
         <div class="card-body">
-
-            <!-- БЛОК 1: ЗАПУСК КАМЕРЫ И СОЗДАНИЕ ПРЕДЛОЖЕНИЯ -->
-            <div id="step1" class="block">
-                <h2 class="block-title">>_ Initialize Stream</h2>
-                <p class="block-description">Press the button to start the camera and generate a connection offer for the viewer.</p>
-                <button id="startButton" class="download-button">Start Camera & Generate Offer</button>
+            <div class="block">
+                <h2 id="statusTitle" class="block-title">>_ Waiting to Start</h2>
+                <p id="statusDesc" class="block-description">Starting stream automatically. Please grant camera access when prompted.</p>
+                <div id="loader" class="hidden" style="text-align:center; padding: 20px; font-size: 1.5em;">📡</div>
             </div>
-            
-            <video id="localVideo" class="block-image hidden" autoplay muted playsinline></video>
-
-            <!-- БЛОК 2: ОТПРАВКА ПРЕДЛОЖЕНИЯ И ПОЛУЧЕНИЕ ОТВЕТА -->
-            <div id="step2" class="block hidden">
-                <h2 class="block-title">>_ Send Offer / Get Answer</h2>
-                <p class="block-description"><b>1. Copy this OFFER</b> and send it to the viewer.</p>
-                <textarea id="offerSdp" readonly></textarea>
-                <p class="block-description" style="margin-top: 20px;"><b>2. Paste the viewer's ANSWER</b> below and connect.</p>
-                <textarea id="answerSdp" placeholder="Paste viewer's answer here..."></textarea>
-                <button id="setAnswerButton" class="download-button">Set Answer & Connect</button>
-            </div>
-
+            <video id="localVideo" class="block-image" autoplay muted playsinline></video>
         </div>
     </div>
 </div>
 
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
 <script>
-    let localStream, peerConnection;
+    // --- ВАША НАСТРОЙКА С ПРАВИЛЬНОЙ ССЫЛКОЙ ---
+    const firebaseConfig = {
+        databaseURL: "https://my-street-cam-default-rtdb.europe-west1.firebasedatabase.app/"
+    };
+    // --- КОНЕЦ НАСТРОЙКИ ---
+
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+    const streamRoomRef = database.ref('stream/my-street');
+
+    const localVideo = document.getElementById('localVideo');
+    const statusTitle = document.getElementById('statusTitle');
+    const statusDesc = document.getElementById('statusDesc');
+    const loader = document.getElementById('loader');
+
+    let peerConnection;
     const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-    const startButton = document.getElementById('startButton');
-    const setAnswerButton = document.getElementById('setAnswerButton');
-    const localVideo = document.getElementById('localVideo');
-    const offerSdpTextarea = document.getElementById('offerSdp');
-    const answerSdpTextarea = document.getElementById('answerSdp');
-
-    startButton.addEventListener('click', async () => {
-        startButton.disabled = true;
-        startButton.textContent = 'Starting Camera...';
-
+    async function startStream() {
         try {
-            // Запускаем камеру
-            localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-            localVideo.srcObject = localStream;
-            localVideo.classList.remove('hidden');
-            
-            startButton.textContent = 'Generating Offer...';
+            statusTitle.textContent = '>_ Initializing Camera';
+            loader.classList.remove('hidden');
 
-            // Создаем PeerConnection
+            await streamRoomRef.set(null); 
+
+            const localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+            localVideo.srcObject = localStream;
+
             peerConnection = new RTCPeerConnection(configuration);
             localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-            
-            // Ждем генерации всех ICE-кандидатов
+
             peerConnection.onicecandidate = e => {
                 if (e.candidate === null) {
-                    // Как только все готово, показываем второй шаг
-                    offerSdpTextarea.value = JSON.stringify(peerConnection.localDescription);
-                    document.getElementById('step1').classList.add('hidden');
-                    document.getElementById('step2').classList.remove('hidden');
+                    const offer = JSON.stringify(peerConnection.localDescription);
+                    streamRoomRef.child('offer').set(offer);
+                    statusTitle.textContent = '>_ Waiting for Viewer';
+                    statusDesc.textContent = 'Offer sent. Open the viewer page on another device. The stream will start when they connect.';
                 }
             };
             
-            // Создаем Offer
+            streamRoomRef.child('answer').on('value', async snapshot => {
+                if (snapshot.exists()) {
+                    const answer = JSON.parse(snapshot.val());
+                    if (!peerConnection.currentRemoteDescription) {
+                        await peerConnection.setRemoteDescription(answer);
+                        statusTitle.textContent = '>_ Connection Established!';
+                        statusDesc.textContent = 'Stream is now live for the viewer.';
+                        loader.classList.add('hidden');
+                    }
+                }
+            });
+
             const offer = await peerConnection.createOffer();
             await peerConnection.setLocalDescription(offer);
 
         } catch (error) {
-            console.error('CAMERA_ERROR:', error);
-            alert('ERROR: Camera access denied. Check browser permissions and reload the page.');
-            startButton.disabled = false;
-            startButton.textContent = 'Start Camera & Generate Offer';
+            console.error("Stream Start Error:", error);
+            statusTitle.textContent = '>_ ERROR';
+            statusDesc.textContent = 'Could not start stream. Check camera permissions and reload the page.';
         }
-    });
+    }
 
-    setAnswerButton.addEventListener('click', async () => {
-        if (!answerSdpTextarea.value) {
-            alert('ERROR: Viewer answer cannot be empty.');
-            return;
-        }
-        try {
-            const answer = JSON.parse(answerSdpTextarea.value);
-            await peerConnection.setRemoteDescription(answer);
-            setAnswerButton.disabled = true;
-            setAnswerButton.textContent = 'Connection Established';
-            setAnswerButton.style.backgroundColor = '#27c93f';
-        } catch (error) {
-            console.error('ANSWER_ERROR:', error);
-            alert('ERROR: Invalid answer format.');
-        }
-    });
+    window.addEventListener('load', startStream);
 </script>
-
 </body>
 </html>
