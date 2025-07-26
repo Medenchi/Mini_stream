@@ -57,11 +57,13 @@
 
         peerConnection = new RTCPeerConnection(configuration);
         peerConnection.ontrack = e => {
+            // Как только видеопоток получен, показываем его и скрываем все шаги
             remoteVideo.srcObject = e.streams[0];
             remoteVideo.classList.remove('hidden');
             document.getElementById('step1').classList.add('hidden');
             document.getElementById('step2').classList.add('hidden');
         };
+        
         peerConnection.onicecandidate = e => {
             if (e.candidate === null) {
                 answerSdpTextarea.value = JSON.stringify(peerConnection.localDescription);
