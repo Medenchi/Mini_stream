@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Просмотр Трансляции</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; padding: 20px; background-color: #f4f4f4; max-width: 800px; margin: auto; }
+        video { width: 100%; border: 1px solid #ccc; background: #000; }
+        textarea { width: 100%; height: 100px; margin-top: 10px; font-family: monospace; font-size: 12px; }
+        button { width: 100%; padding: 12px; font-size: 16px; background-color: #007aff; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; }
+        button:disabled { background-color: #ccc; }
+        .step { background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #ddd; }
+        h3 { margin-top: 0; }
+        label { display: block; margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>Просмотр Трансляции</h1>
+    <video id="remoteVideo" autoplay playsinline></video>
+
+    <!-- ШАГ 1: ПОЛУЧЕНИЕ ПРЕДЛОЖЕНИЯ -->
+    <div id="step1" class="step">
+        <h3>Шаг 1: Подключиться к стриму</h3>
+        <p>Вставьте сюда "Предложение", которое вы получили от стримера, и нажмите кнопку.</p>
+        <label for="offerSdp">"Предложение" от стримера:</label>
+        <textarea id="offerSdp"></textarea>
+        <button id="createAnswerButton">Создать "Ответ"</button>
+    </div>
+
+    <!-- ШАГ 2: ОТПРАВКА ОТВЕТА -->
+    <div id="step2" class="step" style="display: none;">
+        <h3>Шаг 2: Отправить "Ответ"</h3>
+        <p>Скопируйте этот "Ответ" и отправьте его обратно стримеру.</p>
+        <textarea id="answerSdp" readonly></textarea>
+    </div>
+
+    <script>
+        let peerConnection;
+        const remoteVideo = document.getElementById('remoteVideo');
+        const configuration = {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+
+        const createAnswerButton = document.getElementById('createAnswerButton');
+        const offerSdpTextarea = document.getElementById('offerSdp');
+        const answerSdpTextarea = document.getElementById('answerSdp');
+
+        createAnswerButton.addEventListener('click', async () => {
+            if (offerSdpTextarea.value === '') {
+                alert('Пожалуйста, вставьте "Предложение" от стримера.');
+                return;
+            }
+
+            peerConnection = new RTCPeerConnection(configuration);
+
+            // Когда от стримера придет видеодорожка, отображаем ее
+            peerConnection.ontrack = event => {
+                remoteVideo.srcObject = event.streams[0];
+            };
+            
+            // Когда соединение сгенерирует ICE-кандидата, ждем завершения
+            peerConnection.onicecandidate = event => {
+                if (event.candidate === null) {
+                    answerSdpTextarea.value = JSON.stringify(peerConnection.localDescription);
+                    document.getElementById('step1').style.borderColor = '#28a745';
+                    document.getElementById('step2').style.display = 'block';
+                }
+            };
+
+            try {
+                const offer = JSON.parse(offerSdpTextarea.value);
+                await peerConnection.setRemoteDescription(offer);
+                
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+
+                createAnswerButton.disabled = true;
+
+            } catch(error) {
+                console.error("Ошибка при создании ответа: ", error);
+                alert("Неверный формат 'Предложения'.");
+            }
+        });
+    </script>
+</body>
+</html>

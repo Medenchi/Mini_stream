@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Stream Viewer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <div class="card-header">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+            <span class="title-text">./view_stream.sh</span>
+        </div>
+        <div class="card-body">
+
+            <video id="remoteVideo" class="block-image hidden" autoplay playsinline></video>
+
+            <!-- БЛОК 1: ПОЛУЧЕНИЕ ПРЕДЛОЖЕНИЯ -->
+            <div id="step1" class="block">
+                <h2 class="block-title">>_ Establish Connection</h2>
+                <p class="block-description">Waiting for stream... Paste the SDP offer from the streamer below to initiate the connection handshake.</p>
+                <textarea id="offerSdp" placeholder="Paste streamer's offer here..."></textarea>
+                <button id="createAnswerButton" class="download-button">Create Answer</button>
+            </div>
+
+            <!-- БЛОК 2: ОТПРАВКА ОТВЕТА -->
+            <div id="step2" class="block hidden">
+                <h2 class="block-title">>_ Finalize Handshake</h2>
+                <p class="block-description">Answer generated. Copy the SDP data below and send it back to the streamer. The video will appear once the streamer confirms.</p>
+                <textarea id="answerSdp" readonly></textarea>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let peerConnection;
+    const remoteVideo = document.getElementById('remoteVideo');
+    const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    const createAnswerButton = document.getElementById('createAnswerButton');
+    const offerSdpTextarea = document.getElementById('offerSdp');
+    const answerSdpTextarea = document.getElementById('answerSdp');
+
+    createAnswerButton.addEventListener('click', async () => {
+        if (!offerSdpTextarea.value) {
+            alert('ERROR: Streamer offer cannot be empty.');
+            return;
+        }
+        createAnswerButton.disabled = true;
+        createAnswerButton.textContent = 'Processing...';
+
+        peerConnection = new RTCPeerConnection(configuration);
+        peerConnection.ontrack = e => {
+            remoteVideo.srcObject = e.streams[0];
+            remoteVideo.classList.remove('hidden');
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('step2').classList.add('hidden');
+        };
+        peerConnection.onicecandidate = e => {
+            if (e.candidate === null) {
+                answerSdpTextarea.value = JSON.stringify(peerConnection.localDescription);
+                document.getElementById('step1').classList.add('hidden');
+                document.getElementById('step2').classList.remove('hidden');
+            }
+        };
+
+        try {
+            await peerConnection.setRemoteDescription(JSON.parse(offerSdpTextarea.value));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+        } catch(error) {
+            console.error("ANSWER_CREATION_ERROR: ", error);
+            alert("ERROR: Invalid offer format.");
+            createAnswerButton.disabled = false;
+            createAnswerButton.textContent = 'Create Answer';
+        }
+    });
+</script>
+
+</body>
+</html>
