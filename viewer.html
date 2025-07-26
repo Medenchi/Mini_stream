@@ -30,11 +30,9 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
 <script>
-    // --- ВАША НАСТРОЙКА С ПРАВИЛЬНОЙ ССЫЛКОЙ ---
     const firebaseConfig = {
         databaseURL: "https://my-street-cam-default-rtdb.europe-west1.firebasedatabase.app/"
     };
-    // --- КОНЕЦ НАСТРОЙКИ ---
 
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
@@ -44,31 +42,38 @@
     const statusBlock = document.getElementById('statusBlock');
     
     let peerConnection;
-    const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+    // Добавлен бесплатный TURN-сервер для повышения надежности соединения
+    const configuration = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            {
+                urls: 'turn:openrelay.metered.ca:80',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            }
+        ]
+    };
+    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
     function startListening() {
         peerConnection = new RTCPeerConnection(configuration);
-
         peerConnection.ontrack = e => {
             remoteVideo.srcObject = e.streams[0];
             remoteVideo.classList.remove('hidden');
             statusBlock.classList.add('hidden');
         };
-        
         streamRoomRef.child('offer').on('value', async snapshot => {
             if (snapshot.exists() && !peerConnection.currentRemoteDescription) {
                 const offer = JSON.parse(snapshot.val());
                 await peerConnection.setRemoteDescription(offer);
-
                 const answer = await peerConnection.createAnswer();
                 await peerConnection.setLocalDescription(answer);
-
                 const answerString = JSON.stringify(peerConnection.localDescription);
                 streamRoomRef.child('answer').set(answerString);
             }
         });
     }
-
     window.addEventListener('load', startListening);
 </script>
 </body>
