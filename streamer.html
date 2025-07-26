@@ -3,86 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Просмотр Трансляции</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; padding: 20px; background-color: #f4f4f4; max-width: 800px; margin: auto; }
-        video { width: 100%; border: 1px solid #ccc; background: #000; }
-        textarea { width: 100%; height: 100px; margin-top: 10px; font-family: monospace; font-size: 12px; }
-        button { width: 100%; padding: 12px; font-size: 16px; background-color: #007aff; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; }
-        button:disabled { background-color: #ccc; }
-        .step { background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #ddd; }
-        h3 { margin-top: 0; }
-        label { display: block; margin-top: 10px; font-weight: bold; }
-    </style>
+    <title>Streamer Control Panel</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <h1>Просмотр Трансляции</h1>
-    <video id="remoteVideo" autoplay playsinline></video>
+<div class="container">
+    <div class="card">
+        <div class="card-header">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+            <span class="title-text">./stream_control.sh</span>
+        </div>
+        <div class="card-body">
 
-    <!-- ШАГ 1: ПОЛУЧЕНИЕ ПРЕДЛОЖЕНИЯ -->
-    <div id="step1" class="step">
-        <h3>Шаг 1: Подключиться к стриму</h3>
-        <p>Вставьте сюда "Предложение", которое вы получили от стримера, и нажмите кнопку.</p>
-        <label for="offerSdp">"Предложение" от стримера:</label>
-        <textarea id="offerSdp"></textarea>
-        <button id="createAnswerButton">Создать "Ответ"</button>
+            <!-- БЛОК 1: АВТОРИЗАЦИЯ И ЗАПУСК КАМЕРЫ -->
+            <div id="step1" class="block">
+                <h2 class="block-title">>_ Initialize Stream</h2>
+                <p class="block-description">Authenticate to access camera and initiate the peer connection protocol.</p>
+                <input type="password" id="password" placeholder="Enter access key...">
+                <button id="connectButton" class="download-button">Authenticate & Start Camera</button>
+            </div>
+            
+            <video id="localVideo" class="block-image hidden" autoplay muted playsinline></video>
+
+            <!-- БЛОК 2: СОЗДАНИЕ ПРЕДЛОЖЕНИЯ -->
+            <div id="step2" class="block hidden">
+                <h2 class="block-title">>_ Generate Offer</h2>
+                <p class="block-description">Camera is active. Press the button to generate an SDP offer. Copy it and send to the viewer.</p>
+                <button id="createOfferButton" class="download-button">Generate Connection Offer</button>
+                <textarea id="offerSdp" readonly class="hidden"></textarea>
+            </div>
+
+            <!-- БЛОК 3: ПОЛУЧЕНИЕ ОТВЕТА -->
+            <div id="step3" class="block hidden">
+                <h2 class="block-title">>_ Finalize Handshake</h2>
+                <p class="block-description">Paste the SDP answer received from the viewer below to establish the connection.</p>
+                <textarea id="answerSdp" placeholder="Paste viewer's answer here..."></textarea>
+                <button id="setAnswerButton" class="download-button">Set Answer & Connect</button>
+            </div>
+
+        </div>
     </div>
+</div>
 
-    <!-- ШАГ 2: ОТПРАВКА ОТВЕТА -->
-    <div id="step2" class="step" style="display: none;">
-        <h3>Шаг 2: Отправить "Ответ"</h3>
-        <p>Скопируйте этот "Ответ" и отправьте его обратно стримеру.</p>
-        <textarea id="answerSdp" readonly></textarea>
-    </div>
+<script>
+    // SHA-256 хэш от пароля '112233445566778899'
+    const PWD_HASH = 'a892b74336a5b219a317968a3ed5808794352f2812224609758fcc607c3a936a';
+    let localStream, peerConnection;
+    const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-    <script>
-        let peerConnection;
-        const remoteVideo = document.getElementById('remoteVideo');
-        const configuration = {
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    const connectButton = document.getElementById('connectButton');
+    const createOfferButton = document.getElementById('createOfferButton');
+    const setAnswerButton = document.getElementById('setAnswerButton');
+    const passwordInput = document.getElementById('password');
+    const localVideo = document.getElementById('localVideo');
+    const offerSdpTextarea = document.getElementById('offerSdp');
+    const answerSdpTextarea = document.getElementById('answerSdp');
+
+    async function hashString(str) {
+        const data = new TextEncoder().encode(str);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    connectButton.addEventListener('click', async () => {
+        const enteredHash = await hashString(passwordInput.value);
+        if (enteredHash !== PWD_HASH) {
+            alert('ACCESS DENIED: Invalid key');
+            return;
+        }
+        connectButton.textContent = 'Authenticating...';
+        connectButton.disabled = true;
+
+        try {
+            // Запрашиваем основную (заднюю) камеру
+            localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+            localVideo.srcObject = localStream;
+            localVideo.classList.remove('hidden');
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('step2').classList.remove('hidden');
+        } catch (error) {
+            console.error('CAMERA_ERROR:', error);
+            alert('ERROR: Camera access denied. Check browser permissions.');
+            connectButton.textContent = 'Authenticate & Start Camera';
+            connectButton.disabled = false;
+        }
+    });
+
+    createOfferButton.addEventListener('click', async () => {
+        createOfferButton.disabled = true;
+        createOfferButton.textContent = 'Generating...';
+        peerConnection = new RTCPeerConnection(configuration);
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        
+        peerConnection.onicecandidate = e => {
+            if (e.candidate === null) {
+                offerSdpTextarea.value = JSON.stringify(peerConnection.localDescription);
+                offerSdpTextarea.classList.remove('hidden');
+                document.getElementById('step3').classList.remove('hidden');
+                createOfferButton.classList.add('hidden');
+            }
         };
 
-        const createAnswerButton = document.getElementById('createAnswerButton');
-        const offerSdpTextarea = document.getElementById('offerSdp');
-        const answerSdpTextarea = document.getElementById('answerSdp');
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+    });
 
-        createAnswerButton.addEventListener('click', async () => {
-            if (offerSdpTextarea.value === '') {
-                alert('Пожалуйста, вставьте "Предложение" от стримера.');
-                return;
-            }
+    setAnswerButton.addEventListener('click', async () => {
+        if (!answerSdpTextarea.value) {
+            alert('ERROR: Viewer answer cannot be empty.');
+            return;
+        }
+        try {
+            await peerConnection.setRemoteDescription(JSON.parse(answerSdpTextarea.value));
+            setAnswerButton.disabled = true;
+            setAnswerButton.textContent = 'Connection Established';
+            setAnswerButton.style.backgroundColor = '#27c93f';
+            // Скрываем блок ввода после успешного подключения
+            document.getElementById('step3').style.display = 'none';
 
-            peerConnection = new RTCPeerConnection(configuration);
+        } catch (error) {
+            console.error('ANSWER_ERROR:', error);
+            alert('ERROR: Invalid answer format.');
+        }
+    });
+</script>
 
-            // Когда от стримера придет видеодорожка, отображаем ее
-            peerConnection.ontrack = event => {
-                remoteVideo.srcObject = event.streams[0];
-            };
-            
-            // Когда соединение сгенерирует ICE-кандидата, ждем завершения
-            peerConnection.onicecandidate = event => {
-                if (event.candidate === null) {
-                    answerSdpTextarea.value = JSON.stringify(peerConnection.localDescription);
-                    document.getElementById('step1').style.borderColor = '#28a745';
-                    document.getElementById('step2').style.display = 'block';
-                }
-            };
-
-            try {
-                const offer = JSON.parse(offerSdpTextarea.value);
-                await peerConnection.setRemoteDescription(offer);
-                
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-
-                createAnswerButton.disabled = true;
-
-            } catch(error) {
-                console.error("Ошибка при создании ответа: ", error);
-                alert("Неверный формат 'Предложения'.");
-            }
-        });
-    </script>
 </body>
 </html>
