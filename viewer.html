@@ -3,78 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Stream Viewer (AUTO)</title>
+    <title>Viewer (True Broadcast)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
     <div class="card">
         <div class="card-header">
-            <span class="dot red"></span>
-            <span class="dot yellow"></span>
-            <span class="dot green"></span>
-            <span class="title-text">./view_autostream.sh</span>
+            <span class="title-text">./view_live.sh</span>
         </div>
         <div class="card-body">
-             <div id="statusBlock" class="block">
-                <h2 id="statusTitle" class="block-title">>_ Connecting...</h2>
-                <p id="statusDesc" class="block-description">Waiting for the stream offer from the streamer...</p>
-            </div>
-            <video id="remoteVideo" class="block-image hidden" autoplay playsinline></video>
+            <h2 id="status">Ожидание трансляции...</h2>
+            <!-- Используем img, так как получаем картинки (JPEG) -->
+            <img id="streamImage" style="width: 100%; background-color: #000; border-radius: 8px;">
         </div>
     </div>
 </div>
 
-<!-- Firebase SDK -->
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-
 <script>
-    const firebaseConfig = {
-        databaseURL: "https://my-street-cam-default-rtdb.europe-west1.firebasedatabase.app/"
+    const statusEl = document.getElementById('status');
+    const image = document.getElementById('streamImage');
+
+    // Подключаемся к нашему серверу как обычный зритель
+    const ws = new WebSocket('ws://АДРЕС_ВАШЕГО_КОМПЬЮТЕРА:8080');
+
+    ws.onopen = () => {
+        statusEl.textContent = "Подключено. Ожидание видео...";
     };
 
-    firebase.initializeApp(firebaseConfig);
-    const database = firebase.database();
-    const streamRoomRef = database.ref('stream/my-street');
-
-    const remoteVideo = document.getElementById('remoteVideo');
-    const statusBlock = document.getElementById('statusBlock');
+    ws.onmessage = event => {
+        if (event.data === 'stream_ended') {
+            statusEl.textContent = "Трансляция завершена.";
+            image.src = ''; // Очищаем картинку
+            return;
+        }
+        
+        // Когда приходит сообщение (кадр), мы просто ставим его как источник для img
+        statusEl.style.display = 'none'; // Скрываем статус, когда пошло видео
+        image.src = event.data;
+    };
     
-    let peerConnection;
-    // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-    // Добавлен бесплатный TURN-сервер для повышения надежности соединения
-    const configuration = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            {
-                urls: 'turn:openrelay.metered.ca:80',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            }
-        ]
+    ws.onclose = () => {
+        statusEl.style.display = 'block';
+        statusEl.textContent = "🔴 Соединение с сервером потеряно.";
     };
-    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
-
-    function startListening() {
-        peerConnection = new RTCPeerConnection(configuration);
-        peerConnection.ontrack = e => {
-            remoteVideo.srcObject = e.streams[0];
-            remoteVideo.classList.remove('hidden');
-            statusBlock.classList.add('hidden');
-        };
-        streamRoomRef.child('offer').on('value', async snapshot => {
-            if (snapshot.exists() && !peerConnection.currentRemoteDescription) {
-                const offer = JSON.parse(snapshot.val());
-                await peerConnection.setRemoteDescription(offer);
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-                const answerString = JSON.stringify(peerConnection.localDescription);
-                streamRoomRef.child('answer').set(answerString);
-            }
-        });
-    }
-    window.addEventListener('load', startListening);
 </script>
 </body>
 </html>
