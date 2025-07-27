@@ -21,18 +21,7 @@
     const remoteVideo = document.getElementById('remoteVideo');
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
     let peerConnection;
-    const config = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun.services.mozilla.com' },
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
-      ]
-    };
+    const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
     
     function connect() {
         const ws = new WebSocket(SERVER_URL, 'viewer');
@@ -47,14 +36,8 @@
                 if (peerConnection) peerConnection.close();
                 peerConnection = new RTCPeerConnection(config);
                 
-                peerConnection.ontrack = event => {
-                    remoteVideo.srcObject = event.streams[0];
-                    statusEl.style.display = 'none';
-                };
-
-                peerConnection.onicecandidate = e => {
-                    if (e.candidate) { ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate })); }
-                };
+                peerConnection.ontrack = e => { remoteVideo.srcObject = e.streams[0]; statusEl.style.display = 'none'; };
+                peerConnection.onicecandidate = e => { if (e.candidate) { ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate })); } };
                 
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
                 const answer = await peerConnection.createAnswer();
@@ -63,6 +46,11 @@
 
             } else if (message.type === 'ice-candidate') {
                 if (peerConnection) { await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate)); }
+            } else if (message.type === 'streamer-disconnected') {
+                statusEl.style.display = 'block';
+                statusEl.textContent = 'Стример отключился.';
+                remoteVideo.srcObject = null;
+                if(peerConnection) peerConnection.close();
             }
         };
         
