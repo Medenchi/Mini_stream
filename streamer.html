@@ -3,16 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Streamer (Slideshow)</title>
+    <title>Streamer (DEBUG)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header"><span class="dot red"></span><span class="title-text">./slideshow_broadcast.sh</span></div>
+        <div class="card-header"><span class="dot red"></span><span class="title-text">./DEBUG_streamer.sh</span></div>
         <div class="card-body">
-            <h2 id="status">Запуск слайд-шоу...</h2>
-            <p>Надежная трансляция изображений (~17fps).</p>
+            <h2 id="status" style="color: #ffcc00; font-size: 1.2em; white-space: pre-wrap;">Статус: Инициализация...</h2>
             <video id="localVideo" autoplay muted playsinline style="display: none;"></video>
             <canvas id="canvas" style="display: none;"></canvas>
         </div>
@@ -25,59 +24,61 @@
     const context = canvas.getContext('2d');
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
     
-    const FPS = 17;
-    const FRAME_INTERVAL = 1000 / FPS;
-    let lastFrameTime = 0;
-
     async function start() {
-        statusEl.textContent = 'Включаю камеру...';
         try {
+            statusEl.textContent = 'Статус: Запрос к камере...';
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: 480, height: 360 }, // Меньшее разрешение для скорости
+                video: { facingMode: 'environment', width: 320, height: 240 },
                 audio: false
             });
+            statusEl.textContent = 'Статус: Камера получена. Загрузка видео...';
             video.srcObject = stream;
             
-            video.onloadedmetadata = () => {
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                connectAndStream();
-            };
+            // Ждем, пока видео действительно начнет проигрываться
+            await video.play();
+
+            statusEl.textContent = 'Статус: Видео проигрывается. Настройка Canvas...';
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            statusEl.textContent = 'Статус: Подключение к WebSocket серверу...';
+            connectAndStream();
 
         } catch (err) {
-            statusEl.textContent = '⛔️ Ошибка доступа к камере.';
+            statusEl.textContent = `ОШИБКА КАМЕРЫ:\n${err.message}`;
         }
     }
 
     function connectAndStream() {
         const ws = new WebSocket(SERVER_URL, 'streamer');
+        let frameCount = 0;
 
         ws.onopen = () => {
-            statusEl.textContent = '🟢 Трансляция активна!';
+            statusEl.textContent = 'Статус: WebSocket подключен!\nНачинаю отправку кадров...';
             requestAnimationFrame(captureFrame);
         };
 
-        function captureFrame(now) {
+        function captureFrame() {
             if (ws.readyState !== WebSocket.OPEN) return;
-
-            requestAnimationFrame(captureFrame); // Запланировать следующий вызов
             
-            if (now - lastFrameTime < FRAME_INTERVAL) {
-                return; // Пропускаем кадр, если прошло недостаточно времени
-            }
-            lastFrameTime = now;
-
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            // Преобразуем в Blob (двоичные данные) - это быстро!
             canvas.toBlob(blob => {
                 if (blob && ws.readyState === WebSocket.OPEN) {
                     ws.send(blob);
+                    frameCount++;
+                    statusEl.textContent = `Статус: Трансляция активна!\nОтправлено кадров: ${frameCount}`;
                 }
-            }, 'image/jpeg', 0.5); // Качество 0.5 для баланса
+            }, 'image/jpeg', 0.4);
+
+            // Запрашиваем следующий кадр
+            setTimeout(() => requestAnimationFrame(captureFrame), 100); // ~10 FPS
         }
 
         ws.onclose = () => {
-            statusEl.textContent = '🔴 Соединение потеряно.';
+            statusEl.textContent = 'ОШИБКА: WebSocket соединение закрыто.';
+        };
+        ws.onerror = () => {
+            statusEl.textContent = 'ОШИБКА: WebSocket соединение не установлено.';
         };
     }
     
