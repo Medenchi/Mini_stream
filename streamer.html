@@ -9,62 +9,49 @@
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header">
-            <span class="dot red"></span>
-            <span class="title-text">./broadcast.sh</span>
-        </div>
+        <div class="card-header"><span class="dot red"></span><span class="title-text">./broadcast.sh</span></div>
         <div class="card-body">
             <h2 id="status">Подключение к серверу...</h2>
             <video id="localVideo" style="display: none;" autoplay muted playsinline></video>
             <canvas id="canvas" style="display: none;"></canvas>
-            <p>Эта страница захватывает видео с камеры и транслирует его на сервер.</p>
+            <p>Эта страница захватывает видео с камеры и транслирует его на публичный сервер.</p>
         </div>
     </div>
 </div>
-
 <script>
     const statusEl = document.getElementById('status');
     const video = document.getElementById('localVideo');
     const canvas = document.getElementById('canvas');
     const context = canvas.getContext('2d');
-    const FPS = 30;
+    const FPS = 20;
+
+    // !!! ВАШ РАБОЧИЙ АДРЕС С REPLIT УЖЕ ВСТАВЛЕН !!!
+    const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
 
     async function start() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
             video.srcObject = stream;
             
-            // Подключаемся к нашему серверу с пометкой, что мы - стример
-            const ws = new WebSocket('ws://АДРЕС_ВАШЕГО_КОМПЬЮТЕРА:8080', 'streamer');
+            const ws = new WebSocket(SERVER_URL, 'streamer');
 
             ws.onopen = () => {
                 statusEl.textContent = '🟢 Трансляция активна!';
-                
-                // Начинаем отправлять кадры на сервер
                 setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) {
                         canvas.width = video.videoWidth;
                         canvas.height = video.videoHeight;
                         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                        const data = canvas.toDataURL('image/jpeg', 0.5); // Сжимаем в JPEG
+                        const data = canvas.toDataURL('image/jpeg', 0.4);
                         ws.send(data);
                     }
                 }, 1000 / FPS);
             };
-            
-            ws.onclose = () => {
-                statusEl.textContent = '🔴 Трансляция остановлена. Перезагрузите страницу.';
-            };
-            ws.onerror = () => {
-                statusEl.textContent = '❌ Ошибка подключения к серверу.';
-            };
+            ws.onclose = () => { statusEl.textContent = '🔴 Трансляция остановлена.'; };
+            ws.onerror = () => { statusEl.textContent = '❌ Ошибка подключения к серверу.'; };
 
-        } catch (err) {
-            statusEl.textContent = '⛔️ Ошибка доступа к камере.';
-            console.error(err);
-        }
+        } catch (err) { statusEl.textContent = '⛔️ Ошибка доступа к камере.'; }
     }
-
     start();
 </script>
 </body>
