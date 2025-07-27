@@ -22,8 +22,26 @@
     const localVideo = document.getElementById('localVideo');
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
     let peerConnection;
-    let localStream; // Сохраним поток, чтобы не запрашивать камеру каждый раз
-    const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+    let localStream;
+
+    // --- МАКСИМАЛЬНО НАДЕЖНАЯ КОНФИГУРАЦИЯ ---
+    const config = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun.services.mozilla.com' },
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
+      ]
+    };
 
     async function initializeStreamer() {
         statusEl.textContent = 'Включаю камеру...';
@@ -32,9 +50,7 @@
             localVideo.srcObject = localStream;
             statusEl.textContent = '🟢 Камера активна. Ожидание зрителей...';
             connectToSignaling();
-        } catch (err) {
-            statusEl.textContent = '⛔️ Ошибка доступа к камере.';
-        }
+        } catch (err) { statusEl.textContent = '⛔️ Ошибка доступа к камере.'; }
     }
 
     function connectToSignaling() {
@@ -42,28 +58,29 @@
 
         ws.onopen = () => { statusEl.textContent = '🟢 Камера активна. Ожидание зрителей...'; };
 
-        // ГЛАВНАЯ ЛОГИКА ТЕПЕРЬ ЗДЕСЬ
         ws.onmessage = async event => {
             const message = JSON.parse(event.data);
             
             if (message.type === 'viewer-connected') {
                 statusEl.textContent = '🔌 Обнаружен новый зритель, создаю соединение...';
-                if (peerConnection) { peerConnection.close(); } // Закрываем старое соединение
+                if (peerConnection) { peerConnection.close(); }
                 peerConnection = new RTCPeerConnection(config);
                 
-                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-                peerConnection.onicecandidate = e => {
-                    if (e.candidate) { ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate })); }
+                // Диагностический лог
+                peerConnection.oniceconnectionstatechange = () => {
+                    console.log(`Streamer ICE Connection State: ${peerConnection.iceConnectionState}`);
+                    statusEl.textContent = `Статус соединения: ${peerConnection.iceConnectionState}`;
                 };
+
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+                peerConnection.onicecandidate = e => { if (e.candidate) { ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate })); } };
                 
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
-                ws.send(JSON.stringify(offer)); // Отправляем offer зрителю
+                ws.send(JSON.stringify(offer));
 
             } else if (message.type === 'answer') {
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
-                statusEl.textContent = '✅ Трансляция активна!';
 
             } else if (message.type === 'ice-candidate') {
                 await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
@@ -71,7 +88,7 @@
         };
 
         ws.onclose = () => {
-            statusEl.textContent = '🔴 Соединение с сервером потеряно. Переподключение через 5с...';
+            statusEl.textContent = '🔴 Соединение потеряно. Переподключение через 5с...';
             setTimeout(connectToSignaling, 5000);
         };
     }
