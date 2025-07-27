@@ -22,14 +22,11 @@
     const localVideo = document.getElementById('localVideo');
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
     let peerConnection;
-
-    // --- УЛУЧШЕННАЯ КОНФИГУРАЦИЯ ---
     const config = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun.services.mozilla.com' },
-        // Добавление TURN сервера для сложных сетей
         {
           urls: 'turn:openrelay.metered.ca:80',
           username: 'openrelayproject',
@@ -37,54 +34,52 @@
         }
       ]
     };
-    // --------------------------------
 
-    const ws = new WebSocket(SERVER_URL, 'streamer');
+    function connect() {
+        const ws = new WebSocket(SERVER_URL, 'streamer');
 
-    ws.onopen = async () => {
-        statusEl.textContent = '🟢 Сервер подключен. Включаю камеру...';
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-            localVideo.srcObject = stream;
-            
-            peerConnection = new RTCPeerConnection(config);
+        ws.onopen = async () => {
+            statusEl.textContent = '🟢 Сервер подключен. Включаю камеру...';
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+                localVideo.srcObject = stream;
+                
+                if (peerConnection) peerConnection.close();
+                peerConnection = new RTCPeerConnection(config);
+                
+                stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
 
-            // Логирование состояния соединения
-            peerConnection.onconnectionstatechange = () => {
-                console.log('Streamer Connection State:', peerConnection.connectionState);
-                statusEl.textContent = `Статус соединения: ${peerConnection.connectionState}`;
-            };
-            
-            stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+                peerConnection.onicecandidate = event => {
+                    if (event.candidate) { ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate })); }
+                };
+                
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                ws.send(JSON.stringify(offer));
+                statusEl.textContent = '⏳ Ожидание подключения зрителя...';
 
-            peerConnection.onicecandidate = event => {
-                if (event.candidate) {
-                    ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+            } catch (err) { statusEl.textContent = '⛔️ Ошибка доступа к камере.'; }
+        };
+
+        ws.onmessage = async event => {
+            const message = JSON.parse(event.data);
+            if (message.type === 'answer') {
+                if (!peerConnection.currentRemoteDescription) {
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
+                    statusEl.textContent = '✅ Трансляция активна!';
                 }
-            };
-            
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            ws.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, }));
-            statusEl.textContent = '⏳ Ожидание подключения зрителя...';
-
-        } catch (err) {
-            statusEl.textContent = '⛔️ Ошибка доступа к камере.';
-        }
-    };
-
-    ws.onmessage = async event => {
-        const message = JSON.parse(event.data);
-        if (message.type === 'answer') {
-            if (!peerConnection.currentRemoteDescription) {
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
+            } else if (message.type === 'ice-candidate') {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
             }
-        } else if (message.type === 'ice-candidate') {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
-        }
-    };
+        };
 
-    ws.onclose = () => { statusEl.textContent = '🔴 Соединение с сервером потеряно.'; };
+        ws.onclose = () => {
+            statusEl.textContent = '🔴 Соединение потеряно. Переподключение через 5с...';
+            if (peerConnection) { peerConnection.close(); }
+            setTimeout(connect, 5000);
+        };
+    }
+    connect();
 </script>
 </body>
 </html>
