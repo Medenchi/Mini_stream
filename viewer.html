@@ -21,9 +21,22 @@
     const remoteVideo = document.getElementById('remoteVideo');
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
     let peerConnection;
-    const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
     
-    // Указываем нашу роль - 'viewer'
+    // --- УЛУЧШЕННАЯ КОНФИГУРАЦИЯ ---
+    const config = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun.services.mozilla.com' },
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
+      ]
+    };
+    // --------------------------------
+    
     const ws = new WebSocket(SERVER_URL, 'viewer');
 
     ws.onopen = () => { statusEl.textContent = '⏳ Ожидание трансляции...'; };
@@ -33,11 +46,22 @@
         
         if (message.type === 'offer') {
             statusEl.textContent = '🔌 Получено предложение. Установка соединения...';
+            if(peerConnection) peerConnection.close();
             peerConnection = new RTCPeerConnection(config);
+
+            // Логирование состояния соединения
+            peerConnection.onconnectionstatechange = () => {
+                console.log('Viewer Connection State:', peerConnection.connectionState);
+                if (peerConnection.connectionState === 'connected') {
+                    statusEl.style.display = 'none';
+                } else {
+                    statusEl.style.display = 'block';
+                    statusEl.textContent = `Статус соединения: ${peerConnection.connectionState}`;
+                }
+            };
             
             peerConnection.ontrack = event => {
                 remoteVideo.srcObject = event.streams[0];
-                statusEl.style.display = 'none';
             };
 
             peerConnection.onicecandidate = e => {
@@ -55,10 +79,6 @@
             if (peerConnection) {
                 await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
             }
-        } else if (message.type === 'stream-ended') {
-            statusEl.textContent = 'Трансляция завершена.';
-            remoteVideo.srcObject = null;
-            if(peerConnection) peerConnection.close();
         }
     };
     
