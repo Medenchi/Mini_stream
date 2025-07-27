@@ -12,7 +12,6 @@
         <div class="card-header"><span class="title-text">./view_webrtc_live.sh</span></div>
         <div class="card-body">
             <h2 id="status">Подключение к серверу...</h2>
-            <!-- Это снова <video>, а не <img> -->
             <video id="remoteVideo" autoplay playsinline style="width: 100%; background-color: #000; border-radius: 8px; min-height: 200px;"></video>
         </div>
     </div>
@@ -20,33 +19,27 @@
 <script>
     const statusEl = document.getElementById('status');
     const remoteVideo = document.getElementById('remoteVideo');
-
-    // !!! ВСТАВЬТЕ СЮДА ВАШ АДРЕС С REPLIT !!!
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
-
     let peerConnection;
     const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
     
-    const ws = new WebSocket(SERVER_URL);
+    // Указываем нашу роль - 'viewer'
+    const ws = new WebSocket(SERVER_URL, 'viewer');
 
-    ws.onopen = () => {
-        statusEl.textContent = '⏳ Ожидание трансляции...';
-    };
+    ws.onopen = () => { statusEl.textContent = '⏳ Ожидание трансляции...'; };
 
-    // Главная логика здесь
     ws.onmessage = async event => {
         const message = JSON.parse(event.data);
         
         if (message.type === 'offer') {
+            statusEl.textContent = '🔌 Получено предложение. Установка соединения...';
             peerConnection = new RTCPeerConnection(config);
             
-            // Когда приходит видеопоток, показываем его
             peerConnection.ontrack = event => {
                 remoteVideo.srcObject = event.streams[0];
                 statusEl.style.display = 'none';
             };
 
-            // Отправляем ICE кандидатов стримеру
             peerConnection.onicecandidate = e => {
                 if (e.candidate) {
                     ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate }));
@@ -56,13 +49,16 @@
             await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
-            ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
-            statusEl.textContent = '🔌 Установка соединения...';
+            ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp, }));
 
         } else if (message.type === 'ice-candidate') {
             if (peerConnection) {
                 await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
             }
+        } else if (message.type === 'stream-ended') {
+            statusEl.textContent = 'Трансляция завершена.';
+            remoteVideo.srcObject = null;
+            if(peerConnection) peerConnection.close();
         }
     };
     
