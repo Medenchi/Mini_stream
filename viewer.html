@@ -3,51 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Viewer (True Broadcast)</title>
+    <title>Viewer (WebRTC Auto)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header"><span class="title-text">./view_live.sh</span></div>
+        <div class="card-header"><span class="title-text">./view_webrtc_live.sh</span></div>
         <div class="card-body">
-            <h2 id="status">Ожидание трансляции...</h2>
-            <img id="streamImage" style="width: 100%; background-color: #000; border-radius: 8px; min-height: 200px;">
+            <h2 id="status">Подключение к серверу...</h2>
+            <!-- Это снова <video>, а не <img> -->
+            <video id="remoteVideo" autoplay playsinline style="width: 100%; background-color: #000; border-radius: 8px; min-height: 200px;"></video>
         </div>
     </div>
 </div>
 <script>
     const statusEl = document.getElementById('status');
-    const image = document.getElementById('streamImage');
+    const remoteVideo = document.getElementById('remoteVideo');
 
-    // !!! ВАШ РАБОЧИЙ АДРЕС С REPLIT УЖЕ ВСТАВЛЕН !!!
+    // !!! ВСТАВЬТЕ СЮДА ВАШ АДРЕС С REPLIT !!!
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
+
+    let peerConnection;
+    const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
     
-    function connect() {
-        const ws = new WebSocket(SERVER_URL);
+    const ws = new WebSocket(SERVER_URL);
 
-        ws.onopen = () => { statusEl.textContent = "Подключено. Ожидание видео..."; };
-        ws.onmessage = event => {
-            if (event.data === 'stream_ended') {
-                statusEl.textContent = "Трансляция завершена. Попытка переподключения через 5с...";
-                image.src = '';
-                setTimeout(connect, 5000);
-                return;
+    ws.onopen = () => {
+        statusEl.textContent = '⏳ Ожидание трансляции...';
+    };
+
+    // Главная логика здесь
+    ws.onmessage = async event => {
+        const message = JSON.parse(event.data);
+        
+        if (message.type === 'offer') {
+            peerConnection = new RTCPeerConnection(config);
+            
+            // Когда приходит видеопоток, показываем его
+            peerConnection.ontrack = event => {
+                remoteVideo.srcObject = event.streams[0];
+                statusEl.style.display = 'none';
+            };
+
+            // Отправляем ICE кандидатов стримеру
+            peerConnection.onicecandidate = e => {
+                if (e.candidate) {
+                    ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate }));
+                }
+            };
+            
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+            statusEl.textContent = '🔌 Установка соединения...';
+
+        } else if (message.type === 'ice-candidate') {
+            if (peerConnection) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
             }
-            statusEl.style.display = 'none';
-            image.src = event.data;
-        };
-        ws.onclose = () => {
-            statusEl.style.display = 'block';
-            statusEl.textContent = "🔴 Соединение потеряно. Попытка переподключения через 5с...";
-            setTimeout(connect, 5000);
-        };
-        ws.onerror = () => {
-             statusEl.textContent = "❌ Ошибка соединения.";
-        };
-    }
-
-    connect();
+        }
+    };
+    
+    ws.onclose = () => { statusEl.textContent = '🔴 Соединение с сервером потеряно.'; };
 </script>
 </body>
 </html>
