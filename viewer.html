@@ -3,57 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Viewer</title>
+    <title>Viewer (Slow & Stable)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header"><span class="title-text">./view_live.sh</span></div>
+        <div class="card-header"><span class="title-text">./STABLE_viewer.sh</span></div>
         <div class="card-body">
-            <!-- Заменяем <img> на <canvas> для максимально быстрой отрисовки -->
-            <canvas id="remoteCanvas" style="width: 100%; background-color: #000; border-radius: 8px; min-height: 200px;"></canvas>
+            <h2 id="status" style="white-space: pre-wrap;">Статус: Инициализация...</h2>
+            <img id="remoteImage" style="width: 100%; background-color: #000; border-radius: 8px; min-height: 200px;">
         </div>
     </div>
 </div>
 <script>
-    const canvas = document.getElementById('remoteCanvas');
-    const ctx = canvas.getContext('2d');
+    const statusEl = document.getElementById('status');
+    const image = document.getElementById('remoteImage');
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
     
     function connect() {
+        statusEl.textContent = 'Статус: Подключение к WebSocket...';
         const ws = new WebSocket(SERVER_URL, 'viewer');
         ws.binaryType = 'blob';
+        let frameCount = 0;
 
         ws.onopen = () => {
-            // Убираем статус, чтобы не мешал
-            const statusEl = document.querySelector('h2');
-            if (statusEl) statusEl.style.display = 'none';
+            statusEl.textContent = 'Статус: WebSocket подключен.\nОжидание первого кадра...';
         };
 
-        ws.onmessage = async event => {
-            try {
-                // Создаем картинку из Blob и рисуем ее на Canvas
-                // Это самый быстрый и надежный способ
-                const imageBitmap = await createImageBitmap(event.data);
-                
-                // Устанавливаем размер canvas по первому кадру
-                if (canvas.width !== imageBitmap.width || canvas.height !== imageBitmap.height) {
-                    canvas.width = imageBitmap.width;
-                    canvas.height = imageBitmap.height;
-                }
-                
-                ctx.drawImage(imageBitmap, 0, 0);
-                imageBitmap.close(); // Освобождаем память
-            } catch (e) {
-                // Игнорируем ошибки отрисовки "битых" кадров
+        ws.onmessage = event => {
+            frameCount++;
+            const blobSize = event.data.size;
+            statusEl.textContent = `Статус: Кадры поступают!\nПолучен кадр: ${frameCount}\nРазмер: ${blobSize} байт`;
+
+            const oldUrl = image.src;
+            image.src = URL.createObjectURL(event.data);
+            
+            if (oldUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(oldUrl);
             }
         };
 
+        image.onload = () => {
+            // Этот код выполнится, если картинка УСПЕШНО загрузилась
+            statusEl.textContent += '\nСтатус кадра: УСПЕШНО ОТРИСОВАН';
+        };
+
+        image.onerror = () => {
+            // Этот код выполнится, если браузер НЕ СМОГ отобразить картинку
+            statusEl.textContent += '\nОШИБКА: БРАУЗЕР НЕ МОЖЕТ ПОКАЗАТЬ КАДР!';
+        };
+
         ws.onclose = () => {
-            // Можно добавить логику для показа статуса, если нужно
-            console.log("Connection closed. Reconnecting...");
-            setTimeout(connect, 3000);
+            statusEl.textContent = 'ОШИБКА: WebSocket соединение закрыто.';
         };
     }
     
