@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Streamer (WebRTC Auto)</title>
+    <title>Streamer (WebM)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header"><span class="dot red"></span><span class="title-text">./webrtc_broadcast.sh</span></div>
+        <div class="card-header"><span class="dot red"></span><span class="title-text">./webm_broadcast.sh</span></div>
         <div class="card-body">
             <h2 id="status">Запуск трансляции...</h2>
-            <p>Эта страница будет транслировать видео, когда подключится зритель.</p>
+            <p>Используется технология WebM поверх WebSocket.</p>
             <video id="localVideo" autoplay muted playsinline style="width:100%; border-radius: 8px; background: #000;"></video>
         </div>
     </div>
@@ -21,79 +21,48 @@
     const statusEl = document.getElementById('status');
     const localVideo = document.getElementById('localVideo');
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
-    let peerConnection;
-    let localStream;
-
-    // --- МАКСИМАЛЬНО НАДЕЖНАЯ КОНФИГУРАЦИЯ ---
-    const config = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun.services.mozilla.com' },
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
-      ]
-    };
-
-    async function initializeStreamer() {
+    
+    async function startStream() {
         statusEl.textContent = 'Включаю камеру...';
         try {
-            localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-            localVideo.srcObject = localStream;
-            statusEl.textContent = '🟢 Камера активна. Ожидание зрителей...';
-            connectToSignaling();
-        } catch (err) { statusEl.textContent = '⛔️ Ошибка доступа к камере.'; }
-    }
-
-    function connectToSignaling() {
-        const ws = new WebSocket(SERVER_URL, 'streamer');
-
-        ws.onopen = () => { statusEl.textContent = '🟢 Камера активна. Ожидание зрителей...'; };
-
-        ws.onmessage = async event => {
-            const message = JSON.parse(event.data);
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: 640, height: 480 },
+                audio: false
+            });
+            localVideo.srcObject = stream;
             
-            if (message.type === 'viewer-connected') {
-                statusEl.textContent = '🔌 Обнаружен новый зритель, создаю соединение...';
-                if (peerConnection) { peerConnection.close(); }
-                peerConnection = new RTCPeerConnection(config);
+            const ws = new WebSocket(SERVER_URL, 'streamer');
+            ws.onopen = () => {
+                statusEl.textContent = '🟢 Трансляция активна!';
                 
-                // Диагностический лог
-                peerConnection.oniceconnectionstatechange = () => {
-                    console.log(`Streamer ICE Connection State: ${peerConnection.iceConnectionState}`);
-                    statusEl.textContent = `Статус соединения: ${peerConnection.iceConnectionState}`;
+                // Проверяем, поддерживается ли MediaRecorder
+                if (typeof MediaRecorder === 'undefined') {
+                    statusEl.textContent = '⛔️ MediaRecorder не поддерживается на этом устройстве.';
+                    return;
+                }
+                
+                const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp8' });
+
+                mediaRecorder.ondataavailable = event => {
+                    if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+                        ws.send(event.data);
+                    }
                 };
-
-                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-                peerConnection.onicecandidate = e => { if (e.candidate) { ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate })); } };
                 
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer);
-                ws.send(JSON.stringify(offer));
+                // Начинаем запись и отправляем данные каждые 2 секунды
+                mediaRecorder.start(2000);
+            };
 
-            } else if (message.type === 'answer') {
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
+            ws.onclose = () => { statusEl.textContent = '🔴 Соединение потеряно.'; };
+            ws.onerror = () => { statusEl.textContent = '❌ Ошибка соединения.'; };
 
-            } else if (message.type === 'ice-candidate') {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
-            }
-        };
-
-        ws.onclose = () => {
-            statusEl.textContent = '🔴 Соединение потеряно. Переподключение через 5с...';
-            setTimeout(connectToSignaling, 5000);
-        };
+        } catch (err) {
+            statusEl.textContent = '⛔️ Ошибка доступа к камере.';
+            console.error(err);
+        }
     }
     
-    initializeStreamer();
+    startStream();
 </script>
 </body>
 </html>
