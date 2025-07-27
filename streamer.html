@@ -3,56 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Streamer (True Broadcast)</title>
+    <title>Streamer (WebRTC Auto)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header"><span class="dot red"></span><span class="title-text">./broadcast.sh</span></div>
+        <div class="card-header"><span class="dot red"></span><span class="title-text">./webrtc_broadcast.sh</span></div>
         <div class="card-body">
-            <h2 id="status">Подключение к серверу...</h2>
-            <video id="localVideo" style="display: none;" autoplay muted playsinline></video>
-            <canvas id="canvas" style="display: none;"></canvas>
-            <p>Эта страница захватывает видео с камеры и транслирует его на публичный сервер.</p>
+            <h2 id="status">Запуск трансляции...</h2>
+            <p>Захват камеры и ожидание подключения зрителя.</p>
+            <video id="localVideo" autoplay muted playsinline style="width:100%; border-radius: 8px; background: #000;"></video>
         </div>
     </div>
 </div>
 <script>
     const statusEl = document.getElementById('status');
-    const video = document.getElementById('localVideo');
-    const canvas = document.getElementById('canvas');
-    const context = canvas.getContext('2d');
-    const FPS = 20;
+    const localVideo = document.getElementById('localVideo');
 
-    // !!! ВАШ РАБОЧИЙ АДРЕС С REPLIT УЖЕ ВСТАВЛЕН !!!
+    // !!! ВСТАВЬТЕ СЮДА ВАШ АДРЕС С REPLIT !!!
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
 
-    async function start() {
+    let peerConnection;
+    const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    const ws = new WebSocket(SERVER_URL);
+
+    ws.onopen = async () => {
+        statusEl.textContent = '🟢 Сервер подключен. Включаю камеру...';
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-            video.srcObject = stream;
+            localVideo.srcObject = stream;
             
-            const ws = new WebSocket(SERVER_URL, 'streamer');
+            peerConnection = new RTCPeerConnection(config);
+            // Добавляем видео дорожку в соединение
+            stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
 
-            ws.onopen = () => {
-                statusEl.textContent = '🟢 Трансляция активна!';
-                setInterval(() => {
-                    if (ws.readyState === WebSocket.OPEN) {
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                        const data = canvas.toDataURL('image/jpeg', 0.4);
-                        ws.send(data);
-                    }
-                }, 1000 / FPS);
+            // Отправляем ICE кандидатов зрителю
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+                }
             };
-            ws.onclose = () => { statusEl.textContent = '🔴 Трансляция остановлена.'; };
-            ws.onerror = () => { statusEl.textContent = '❌ Ошибка подключения к серверу.'; };
+            
+            // Создаем Offer
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            ws.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+            statusEl.textContent = '⏳ Ожидание подключения зрителя...';
 
-        } catch (err) { statusEl.textContent = '⛔️ Ошибка доступа к камере.'; }
-    }
-    start();
+        } catch (err) {
+            statusEl.textContent = '⛔️ Ошибка доступа к камере.';
+            console.error(err);
+        }
+    };
+
+    // Получаем Answer от зрителя
+    ws.onmessage = async event => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'answer') {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
+            statusEl.textContent = '✅ Трансляция активна!';
+        } else if (message.type === 'ice-candidate') {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+        }
+    };
+
+    ws.onclose = () => { statusEl.textContent = '🔴 Соединение с сервером потеряно.'; };
 </script>
 </body>
 </html>
