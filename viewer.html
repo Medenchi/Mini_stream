@@ -9,44 +9,45 @@
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header">
-            <span class="title-text">./view_live.sh</span>
-        </div>
+        <div class="card-header"><span class="title-text">./view_live.sh</span></div>
         <div class="card-body">
             <h2 id="status">Ожидание трансляции...</h2>
-            <!-- Используем img, так как получаем картинки (JPEG) -->
-            <img id="streamImage" style="width: 100%; background-color: #000; border-radius: 8px;">
+            <img id="streamImage" style="width: 100%; background-color: #000; border-radius: 8px; min-height: 200px;">
         </div>
     </div>
 </div>
-
 <script>
     const statusEl = document.getElementById('status');
     const image = document.getElementById('streamImage');
 
-    // Подключаемся к нашему серверу как обычный зритель
-    const ws = new WebSocket('ws://АДРЕС_ВАШЕГО_КОМПЬЮТЕРА:8080');
-
-    ws.onopen = () => {
-        statusEl.textContent = "Подключено. Ожидание видео...";
-    };
-
-    ws.onmessage = event => {
-        if (event.data === 'stream_ended') {
-            statusEl.textContent = "Трансляция завершена.";
-            image.src = ''; // Очищаем картинку
-            return;
-        }
-        
-        // Когда приходит сообщение (кадр), мы просто ставим его как источник для img
-        statusEl.style.display = 'none'; // Скрываем статус, когда пошло видео
-        image.src = event.data;
-    };
+    // !!! ВАШ РАБОЧИЙ АДРЕС С REPLIT УЖЕ ВСТАВЛЕН !!!
+    const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
     
-    ws.onclose = () => {
-        statusEl.style.display = 'block';
-        statusEl.textContent = "🔴 Соединение с сервером потеряно.";
-    };
+    function connect() {
+        const ws = new WebSocket(SERVER_URL);
+
+        ws.onopen = () => { statusEl.textContent = "Подключено. Ожидание видео..."; };
+        ws.onmessage = event => {
+            if (event.data === 'stream_ended') {
+                statusEl.textContent = "Трансляция завершена. Попытка переподключения через 5с...";
+                image.src = '';
+                setTimeout(connect, 5000);
+                return;
+            }
+            statusEl.style.display = 'none';
+            image.src = event.data;
+        };
+        ws.onclose = () => {
+            statusEl.style.display = 'block';
+            statusEl.textContent = "🔴 Соединение потеряно. Попытка переподключения через 5с...";
+            setTimeout(connect, 5000);
+        };
+        ws.onerror = () => {
+             statusEl.textContent = "❌ Ошибка соединения.";
+        };
+    }
+
+    connect();
 </script>
 </body>
 </html>
