@@ -22,9 +22,23 @@
     const localVideo = document.getElementById('localVideo');
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
     let peerConnection;
-    const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-    // Указываем нашу роль - 'streamer'
+    // --- УЛУЧШЕННАЯ КОНФИГУРАЦИЯ ---
+    const config = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun.services.mozilla.com' },
+        // Добавление TURN сервера для сложных сетей
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
+      ]
+    };
+    // --------------------------------
+
     const ws = new WebSocket(SERVER_URL, 'streamer');
 
     ws.onopen = async () => {
@@ -34,6 +48,13 @@
             localVideo.srcObject = stream;
             
             peerConnection = new RTCPeerConnection(config);
+
+            // Логирование состояния соединения
+            peerConnection.onconnectionstatechange = () => {
+                console.log('Streamer Connection State:', peerConnection.connectionState);
+                statusEl.textContent = `Статус соединения: ${peerConnection.connectionState}`;
+            };
+            
             stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
 
             peerConnection.onicecandidate = event => {
@@ -57,7 +78,6 @@
         if (message.type === 'answer') {
             if (!peerConnection.currentRemoteDescription) {
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
-                statusEl.textContent = '✅ Трансляция активна!';
             }
         } else if (message.type === 'ice-candidate') {
             await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
