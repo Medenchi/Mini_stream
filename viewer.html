@@ -3,63 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Viewer (Slow & Stable)</title>
+    <title>Live View</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .player-wrapper {
+            position: relative;
+            padding-top: 56.25%; /* 16:9 Aspect Ratio */
+            height: 0;
+            background: #000;
+        }
+        .player-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
 </head>
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header"><span class="title-text">./STABLE_viewer.sh</span></div>
+        <div class="card-header"><span class="title-text">./view_live.sh</span></div>
         <div class="card-body">
-            <h2 id="status" style="white-space: pre-wrap;">Статус: Инициализация...</h2>
-            <img id="remoteImage" style="width: 100%; background-color: #000; border-radius: 8px; min-height: 200px;">
+            <div id="twitch-embed"></div>
         </div>
     </div>
 </div>
-<script>
-    const statusEl = document.getElementById('status');
-    const image = document.getElementById('remoteImage');
-    const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
-    
-    function connect() {
-        statusEl.textContent = 'Статус: Подключение к WebSocket...';
-        const ws = new WebSocket(SERVER_URL, 'viewer');
-        ws.binaryType = 'blob';
-        let frameCount = 0;
 
-        ws.onopen = () => {
-            statusEl.textContent = 'Статус: WebSocket подключен.\nОжидание первого кадра...';
-        };
-
-        ws.onmessage = event => {
-            frameCount++;
-            const blobSize = event.data.size;
-            statusEl.textContent = `Статус: Кадры поступают!\nПолучен кадр: ${frameCount}\nРазмер: ${blobSize} байт`;
-
-            const oldUrl = image.src;
-            image.src = URL.createObjectURL(event.data);
-            
-            if (oldUrl.startsWith('blob:')) {
-                URL.revokeObjectURL(oldUrl);
-            }
-        };
-
-        image.onload = () => {
-            // Этот код выполнится, если картинка УСПЕШНО загрузилась
-            statusEl.textContent += '\nСтатус кадра: УСПЕШНО ОТРИСОВАН';
-        };
-
-        image.onerror = () => {
-            // Этот код выполнится, если браузер НЕ СМОГ отобразить картинку
-            statusEl.textContent += '\nОШИБКА: БРАУЗЕР НЕ МОЖЕТ ПОКАЗАТЬ КАДР!';
-        };
-
-        ws.onclose = () => {
-            statusEl.textContent = 'ОШИБКА: WebSocket соединение закрыто.';
-        };
-    }
-    
-    connect();
+<!-- Скрипт для встраивания плеера Twitch -->
+<script src="https://embed.twitch.tv/embed/v1.js"></script>
+<script type="text/javascript">
+  new Twitch.Embed("twitch-embed", {
+    width: "100%",
+    height: "100%",
+    // !!! ЗАМЕНИТЕ "ВАШ_НИКНЕЙМ_НА_TWITCH" НА ВАШ РЕАЛЬНЫЙ НИКНЕЙМ !!!
+    channel: "arammmbxc",
+    layout: "video",
+    autoplay: true,
+    muted: true,
+    // Указываем родительский домен, чтобы разрешить встраивание
+    parent: ["medenchi.github.io"] 
+  });
 </script>
+
 </body>
 </html>
