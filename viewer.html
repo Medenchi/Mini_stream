@@ -21,8 +21,6 @@
     const remoteVideo = document.getElementById('remoteVideo');
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
     let peerConnection;
-    
-    // --- УЛУЧШЕННАЯ КОНФИГУРАЦИЯ ---
     const config = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -35,54 +33,47 @@
         }
       ]
     };
-    // --------------------------------
     
-    const ws = new WebSocket(SERVER_URL, 'viewer');
+    function connect() {
+        const ws = new WebSocket(SERVER_URL, 'viewer');
 
-    ws.onopen = () => { statusEl.textContent = '⏳ Ожидание трансляции...'; };
+        ws.onopen = () => { statusEl.textContent = '⏳ Ожидание трансляции...'; };
 
-    ws.onmessage = async event => {
-        const message = JSON.parse(event.data);
-        
-        if (message.type === 'offer') {
-            statusEl.textContent = '🔌 Получено предложение. Установка соединения...';
-            if(peerConnection) peerConnection.close();
-            peerConnection = new RTCPeerConnection(config);
-
-            // Логирование состояния соединения
-            peerConnection.onconnectionstatechange = () => {
-                console.log('Viewer Connection State:', peerConnection.connectionState);
-                if (peerConnection.connectionState === 'connected') {
+        ws.onmessage = async event => {
+            const message = JSON.parse(event.data);
+            
+            if (message.type === 'offer') {
+                statusEl.textContent = '🔌 Получено предложение. Установка соединения...';
+                if (peerConnection) peerConnection.close();
+                peerConnection = new RTCPeerConnection(config);
+                
+                peerConnection.ontrack = event => {
+                    remoteVideo.srcObject = event.streams[0];
                     statusEl.style.display = 'none';
-                } else {
-                    statusEl.style.display = 'block';
-                    statusEl.textContent = `Статус соединения: ${peerConnection.connectionState}`;
-                }
-            };
-            
-            peerConnection.ontrack = event => {
-                remoteVideo.srcObject = event.streams[0];
-            };
+                };
 
-            peerConnection.onicecandidate = e => {
-                if (e.candidate) {
-                    ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate }));
-                }
-            };
-            
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp, }));
+                peerConnection.onicecandidate = e => {
+                    if (e.candidate) { ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate })); }
+                };
+                
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                ws.send(JSON.stringify(answer));
 
-        } else if (message.type === 'ice-candidate') {
-            if (peerConnection) {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+            } else if (message.type === 'ice-candidate') {
+                if (peerConnection) { await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate)); }
             }
-        }
-    };
-    
-    ws.onclose = () => { statusEl.textContent = '🔴 Соединение с сервером потеряно.'; };
+        };
+        
+        ws.onclose = () => {
+            statusEl.textContent = '🔴 Соединение потеряно. Переподключение через 5с...';
+            if (peerConnection) { peerConnection.close(); }
+            remoteVideo.srcObject = null;
+            setTimeout(connect, 5000);
+        };
+    }
+    connect();
 </script>
 </body>
 </html>
