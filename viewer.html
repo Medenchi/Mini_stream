@@ -3,47 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live View</title>
+    <title>SYSTEM_LINK :: LIVE_FEED</title>
+    <!-- Подключаем новый файл стилей -->
     <link rel="stylesheet" href="style.css">
-    <style>
-        .player-wrapper {
-            position: relative;
-            padding-top: 56.25%; /* 16:9 Aspect Ratio */
-            height: 0;
-            background: #000;
-        }
-        .player-wrapper iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-        }
-    </style>
 </head>
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header"><span class="title-text">./view_live.sh</span></div>
-        <div class="card-body">
-            <div id="twitch-embed"></div>
+        
+        <!-- НОВЫЙ ЭЛЕМЕНТ: Заголовок в стиле терминала -->
+        <div class="terminal-header">
+            <span class="prompt-text">user@live_feed:~$ </span><span class="command-text">./view_stream.sh</span><span class="cursor"></span>
         </div>
+
+        <div class="card-body">
+            <!-- Основной контейнер для плеера Twitch -->
+            <div id="twitch-embed" class="player-wrapper"></div>
+        </div>
+
+        <!-- НОВЫЙ ДОПОЛНИТЕЛЬНЫЙ ЭЛЕМЕНТ: Футер в стиле статус-бара -->
+        <div class="terminal-footer">
+            <span><span class="status-light"></span>LINK: STABLE</span>
+            <span class="status-text">ENCRYPTION: AES-256</span>
+            <span>v1.0-FINAL</span>
+        </div>
+
     </div>
 </div>
 
-<!-- Скрипт для встраивания плеера Twitch -->
+<!-- Скрипт для встраивания плеера Twitch (остается без изменений) -->
 <script src="https://embed.twitch.tv/embed/v1.js"></script>
 <script type="text/javascript">
   new Twitch.Embed("twitch-embed", {
     width: "100%",
     height: "100%",
-    // !!! ЗАМЕНИТЕ "ВАШ_НИКНЕЙМ_НА_TWITCH" НА ВАШ РЕАЛЬНЫЙ НИКНЕЙМ !!!
+    // !!! НЕ ЗАБУДЬТЕ ЗАМЕНИТЬ НА ВАШ НИКНЕЙМ НА TWITCH !!!
     channel: "arammmbxc",
     layout: "video",
     autoplay: true,
     muted: true,
     // Указываем родительский домен, чтобы разрешить встраивание
-    parent: ["medenchi.github.io"] 
+    parent: ["medenchi.github.io"]  // Ваш домен
   });
 </script>
 
