@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Viewer (WebRTC Auto)</title>
+    <title>Viewer (WebM)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header"><span class="title-text">./view_webrtc_live.sh</span></div>
+        <div class="card-header"><span class="title-text">./view_webm_live.sh</span></div>
         <div class="card-body">
             <h2 id="status">Подключение к серверу...</h2>
             <video id="remoteVideo" autoplay playsinline style="width: 100%; background-color: #000; border-radius: 8px; min-height: 200px;"></video>
@@ -20,75 +20,41 @@
     const statusEl = document.getElementById('status');
     const remoteVideo = document.getElementById('remoteVideo');
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
-    let peerConnection;
     
-    // --- МАКСИМАЛЬНО НАДЕЖНАЯ КОНФИГУРАЦИЯ ---
-    const config = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun.services.mozilla.com' },
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
-      ]
-    };
-    
-    function connect() {
+    function startPlayer() {
         const ws = new WebSocket(SERVER_URL, 'viewer');
+        let mediaSource = new MediaSource();
+        remoteVideo.src = URL.createObjectURL(mediaSource);
 
-        ws.onopen = () => { statusEl.textContent = '⏳ Ожидание трансляции...'; };
-
-        ws.onmessage = async event => {
-            const message = JSON.parse(event.data);
-            
-            if (message.type === 'offer') {
-                statusEl.textContent = '🔌 Получено предложение. Установка соединения...';
-                if (peerConnection) peerConnection.close();
-                peerConnection = new RTCPeerConnection(config);
+        mediaSource.addEventListener('sourceopen', () => {
+            statusEl.textContent = '⏳ Ожидание трансляции...';
+            try {
+                const sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs=vp8');
                 
-                // Диагностический лог
-                peerConnection.oniceconnectionstatechange = () => {
-                    console.log(`Viewer ICE Connection State: ${peerConnection.iceConnectionState}`);
-                    if (peerConnection.iceConnectionState === 'connected') {
-                        statusEl.style.display = 'none';
-                    } else {
-                        statusEl.style.display = 'block';
-                        statusEl.textContent = `Статус соединения: ${peerConnection.iceConnectionState}`;
+                ws.onmessage = async event => {
+                    if (typeof event.data === 'string') {
+                        if (event.data === 'stream-started' || event.data === 'stream-ended') {
+                            statusEl.textContent = event.data === 'stream-started' ? '▶️ Трансляция началась!' : '⏹️ Трансляция завершена.';
+                        }
+                        return;
+                    }
+                    
+                    if (!sourceBuffer.updating) {
+                        sourceBuffer.appendBuffer(await event.data.arrayBuffer());
                     }
                 };
-                
-                peerConnection.ontrack = e => { remoteVideo.srcObject = e.streams[0]; };
-                peerConnection.onicecandidate = e => { if (e.candidate) { ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate })); } };
-                
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-                ws.send(JSON.stringify(answer));
-
-            } else if (message.type === 'ice-candidate') {
-                if (peerConnection) { await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate)); }
-            } else if (message.type === 'streamer-disconnected') {
-                statusEl.style.display = 'block';
-                statusEl.textContent = 'Стример отключился.';
-                if(peerConnection) peerConnection.close();
+            } catch (e) {
+                statusEl.textContent = '⛔️ Ошибка создания SourceBuffer. Возможно, формат не поддерживается.';
+                console.error(e);
             }
-        };
-        
+        });
+
         ws.onclose = () => {
-            statusEl.textContent = '🔴 Соединение потеряно. Переподключение через 5с...';
-            if (peerConnection) { peerConnection.close(); }
-            setTimeout(connect, 5000);
+            statusEl.textContent = '🔴 Соединение потеряно.';
         };
     }
-    connect();
+    
+    startPlayer();
 </script>
 </body>
 </html>
