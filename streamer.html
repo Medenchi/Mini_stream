@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Streamer</title>
+    <title>Streamer (Slow & Stable)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header"><span class="dot red"></span><span class="title-text">./broadcast.sh</span></div>
+        <div class="card-header"><span class="dot red"></span><span class="title-text">./STABLE_broadcast.sh</span></div>
         <div class="card-body">
-            <h2 id="status">Запуск трансляции...</h2>
+            <h2 id="status" style="white-space: pre-wrap;">Статус: Инициализация...</h2>
             <video id="localVideo" autoplay muted playsinline style="display: none;"></video>
             <canvas id="canvas" style="display: none;"></canvas>
         </div>
@@ -25,12 +25,13 @@
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
     
     async function start() {
-        statusEl.textContent = 'Запрос к камере...';
+        statusEl.textContent = 'Статус: Запрос к камере...';
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment', width: 320, height: 240 },
                 audio: false
             });
+            statusEl.textContent = 'Статус: Камера получена.';
             video.srcObject = stream;
             
             await new Promise(resolve => { video.onloadedmetadata = resolve; });
@@ -39,34 +40,34 @@
             canvas.height = video.videoHeight;
             connectAndStream();
         } catch (err) {
-            statusEl.textContent = `ОШИБКА КАМЕРЫ: ${err.name}`;
+            statusEl.textContent = `ОШИБКА КАМЕРЫ:\n${err.name}`;
         }
     }
 
     function connectAndStream() {
         const ws = new WebSocket(SERVER_URL, 'streamer');
+        let frameCount = 0;
 
         ws.onopen = () => {
-            statusEl.textContent = '🟢 Трансляция активна';
-            let isSending = false; // Флаг, чтобы избежать отправки нового кадра, пока старый в обработке
-
-            // Используем setInterval для более предсказуемой частоты кадров
+            statusEl.textContent = 'Статус: WebSocket подключен.\nНачинаю отправку кадров...';
+            
             setInterval(() => {
-                if (ws.readyState !== WebSocket.OPEN || isSending) return;
+                if (ws.readyState !== WebSocket.OPEN) return;
                 
-                isSending = true;
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
                 canvas.toBlob(blob => {
                     if (blob) {
                         ws.send(blob);
+                        frameCount++;
+                        statusEl.textContent = `Статус: Трансляция активна!\nОтправлен кадр: ${frameCount}\nРазмер: ${blob.size} байт`;
                     }
-                    isSending = false;
-                }, 'image/jpeg', 0.4); // Качество 0.4 для максимальной скорости
-            }, 100); // ~10 FPS
+                }, 'image/jpeg', 0.5);
+            }, 2000); // 1 кадр каждые 2000 миллисекунд (2 секунды)
         };
 
-        ws.onclose = () => { statusEl.textContent = '🔴 Соединение потеряно.'; };
-        ws.onerror = () => { statusEl.textContent = '❌ Ошибка соединения.'; };
+        ws.onclose = () => {
+            statusEl.textContent = 'ОШИБКА: WebSocket соединение закрыто.';
+        };
     }
     
     start();
