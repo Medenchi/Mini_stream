@@ -3,58 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Viewer (WebM)</title>
+    <title>Viewer (Slideshow)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
     <div class="card">
-        <div class="card-header"><span class="title-text">./view_webm_live.sh</span></div>
+        <div class="card-header"><span class="title-text">./view_slideshow_live.sh</span></div>
         <div class="card-body">
             <h2 id="status">Подключение к серверу...</h2>
-            <video id="remoteVideo" autoplay playsinline style="width: 100%; background-color: #000; border-radius: 8px; min-height: 200px;"></video>
+            <!-- Это снова <img> для показа картинок -->
+            <img id="remoteImage" style="width: 100%; background-color: #000; border-radius: 8px; min-height: 200px;">
         </div>
     </div>
 </div>
 <script>
     const statusEl = document.getElementById('status');
-    const remoteVideo = document.getElementById('remoteVideo');
+    const image = document.getElementById('remoteImage');
     const SERVER_URL = 'wss://9d2488b5-3986-4269-bfdd-d01f421e0f4c-00-asck2nhxkvc6.pike.replit.dev/';
     
-    function startPlayer() {
+    function connect() {
         const ws = new WebSocket(SERVER_URL, 'viewer');
-        let mediaSource = new MediaSource();
-        remoteVideo.src = URL.createObjectURL(mediaSource);
+        ws.binaryType = 'blob'; // Важно для приема двоичных данных
 
-        mediaSource.addEventListener('sourceopen', () => {
+        ws.onopen = () => {
             statusEl.textContent = '⏳ Ожидание трансляции...';
-            try {
-                const sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs=vp8');
-                
-                ws.onmessage = async event => {
-                    if (typeof event.data === 'string') {
-                        if (event.data === 'stream-started' || event.data === 'stream-ended') {
-                            statusEl.textContent = event.data === 'stream-started' ? '▶️ Трансляция началась!' : '⏹️ Трансляция завершена.';
-                        }
-                        return;
-                    }
-                    
-                    if (!sourceBuffer.updating) {
-                        sourceBuffer.appendBuffer(await event.data.arrayBuffer());
-                    }
-                };
-            } catch (e) {
-                statusEl.textContent = '⛔️ Ошибка создания SourceBuffer. Возможно, формат не поддерживается.';
-                console.error(e);
+        };
+
+        ws.onmessage = event => {
+            statusEl.style.display = 'none'; // Скрываем статус, когда пошло видео
+            
+            // Создаем временный URL для Blob и показываем картинку
+            // Это самый быстрый способ отображения
+            const oldUrl = image.src;
+            image.src = URL.createObjectURL(event.data);
+            
+            // Очищаем старый URL из памяти, чтобы избежать утечек
+            if (oldUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(oldUrl);
             }
-        });
+        };
 
         ws.onclose = () => {
-            statusEl.textContent = '🔴 Соединение потеряно.';
+            statusEl.style.display = 'block';
+            statusEl.textContent = '🔴 Соединение потеряно. Переподключение через 3с...';
+            setTimeout(connect, 3000);
         };
     }
     
-    startPlayer();
+    connect();
 </script>
 </body>
 </html>
